@@ -1,0 +1,555 @@
+<title>Drivo Complaint Trends</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --ctrl: #2a78d6;      /* controllable  — categorical slot 1 */
+    --nonctrl: #eb6834;   /* non-controllable — categorical slot 2 */
+    --delta-bad: #d03b3b; /* complaints up  = bad  */
+    --delta-good: #006300;/* complaints down = good */
+    --seg-active-ink: #0b0b0b;
+    --wash: rgba(11, 11, 11, 0.045);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --ctrl: #3987e5;
+      --nonctrl: #d95926;
+      --delta-bad: #e66767;
+      --delta-good: #0ca30c;
+      --seg-active-ink: #ffffff;
+      --wash: rgba(255, 255, 255, 0.06);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --ctrl: #3987e5;
+    --nonctrl: #d95926;
+    --delta-bad: #e66767;
+    --delta-good: #0ca30c;
+    --seg-active-ink: #ffffff;
+    --wash: rgba(255, 255, 255, 0.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 28px 20px 56px;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+  header .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  header h1 { font-size: 26px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  header .asof { color: var(--ink-2); font-size: 13px; margin-top: 4px; }
+
+  /* ---------- filter row ---------- */
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 12px 14px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  .filters label { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 7px; font-weight: 500; }
+  .filters select {
+    font: inherit; font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 8px;
+  }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-left: auto; }
+  .seg button {
+    font: inherit; font-size: 13px; padding: 6px 14px; border: none; cursor: pointer;
+    background: transparent; color: var(--ink-2);
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { background: var(--wash); }
+  .seg button[aria-pressed="true"] { background: var(--wash); color: var(--seg-active-ink); font-weight: 650; }
+  .seg button:focus-visible, .filters select:focus-visible, .col:focus-visible {
+    outline: 2px solid var(--ctrl); outline-offset: 1px;
+  }
+
+  /* ---------- stat tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .tile .label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+  .tile .value { font-size: 34px; font-weight: 650; letter-spacing: -0.015em; line-height: 1.15; }
+  .tile .sub { font-size: 12px; color: var(--muted); }
+  .tile .delta { font-size: 12px; font-weight: 600; }
+  .tile .delta.bad  { color: var(--delta-bad); }
+  .tile .delta.good { color: var(--delta-good); }
+  .tile .delta.flat { color: var(--muted); }
+  .tile .keydot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+
+  /* ---------- chart cards ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px 14px;
+  }
+  .card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 4px; }
+  .card-head h2 { font-size: 15px; font-weight: 650; margin: 0; }
+  .card-head .sub { font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 14px; margin-left: auto; font-size: 12px; color: var(--ink-2); }
+  .legend .key { display: flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .swatch.c  { background: var(--ctrl); }
+  .swatch.n  { background: var(--nonctrl); }
+
+  .chart { position: relative; margin-top: 12px; }
+  .plot { position: relative; height: 230px; margin-left: 44px; }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--grid); }
+  .gridline.zero { border-top-color: var(--axis); }
+  .gridline .tick {
+    position: absolute; left: -44px; width: 38px; text-align: right; top: -0.6em;
+    font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .cols { position: absolute; inset: 0; display: flex; align-items: flex-end; }
+  .col {
+    flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end;
+    align-items: center; cursor: default; border-radius: 6px 6px 0 0;
+  }
+  .col:hover { background: var(--wash); }
+  .stack { width: 100%; max-width: 24px; display: flex; flex-direction: column-reverse; }
+  .seg-c, .seg-n { width: 100%; }
+  .seg-c { background: var(--ctrl); }
+  .seg-n { background: var(--nonctrl); margin-bottom: 2px; }  /* 2px surface gap between stack fills */
+  .stack .top { border-radius: 4px 4px 0 0; }
+  .cap {
+    font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .xband { display: flex; margin-left: 44px; margin-top: 6px; }
+  .xband .xlab { flex: 1; text-align: center; font-size: 11.5px; color: var(--muted); }
+  .xband .xlab.now { color: var(--ink); font-weight: 650; }
+  .footnote { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+
+  /* ---------- top types bars ---------- */
+  .topbars { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .tb-row { display: grid; grid-template-columns: 175px 1fr; align-items: center; gap: 10px; border-radius: 6px; }
+  .tb-row:hover { background: var(--wash); }
+  .tb-row:focus-visible { outline: 2px solid var(--ctrl); outline-offset: 1px; }
+  .tb-name { font-size: 13px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb-rank { color: var(--muted); font-size: 11.5px; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .tb-track { display: flex; align-items: center; min-height: 22px; }
+  .tb-fill { height: 18px; border-radius: 0 4px 4px 0; flex: none; }
+  .tb-fill.c { background: var(--ctrl); }
+  .tb-fill.n { background: var(--nonctrl); }
+  .tb-val { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-left: 7px; font-variant-numeric: tabular-nums; }
+
+  #tooltip {
+    position: fixed; z-index: 10; pointer-events: none; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14); padding: 8px 11px; font-size: 12px; min-width: 150px;
+  }
+  #tooltip .tt-title { font-weight: 650; margin-bottom: 4px; }
+  #tooltip .tt-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; color: var(--ink-2); }
+  #tooltip .tt-row .lhs { display: flex; align-items: center; gap: 6px; }
+  #tooltip .tt-row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #tooltip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+  details.tblview { margin-top: 10px; }
+  details.tblview summary { font-size: 12px; color: var(--ink-2); cursor: pointer; }
+
+  /* ---------- breakdown table ---------- */
+  .tscroll { overflow-x: auto; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 6px 10px; text-align: right; white-space: nowrap; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--axis); }
+  td { border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; color: var(--ink); }
+  th:first-child, td:first-child { text-align: left; }
+  td.zero { color: var(--muted); }
+  tr.section td {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 650;
+    color: var(--ink-2); padding-top: 14px; border-bottom: 1px solid var(--axis);
+  }
+  tr.section td .keydot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  tr.subtotal td { font-weight: 650; border-bottom: 1px solid var(--axis); }
+  tr.grand td { font-weight: 700; border-bottom: none; border-top: 2px solid var(--axis); }
+  th.div, td.div { border-left: 1px solid var(--grid); }
+  @media (max-width: 640px) { .tile .value { font-size: 28px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Customer service &middot; CS database</div>
+    <h1>Drivo Complaint Trends</h1>
+    <div class="asof" id="asof"></div>
+  </header>
+
+  <div class="filters" role="group" aria-label="Filters">
+    <label>Year <select id="selYear"></select></label>
+    <label>Month <select id="selMonth"></select></label>
+    <div class="seg" role="group" aria-label="Source" id="segSrc">
+      <button data-src="2" aria-pressed="true">Overall</button>
+      <button data-src="0" aria-pressed="false">Drivo Survey</button>
+      <button data-src="1" aria-pressed="false">Other sources</button>
+    </div>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 id="wkTitle">Weekly breakdown</h2>
+      <span class="sub" id="wkSub"></span>
+      <div class="legend">
+        <span class="key"><span class="swatch c"></span>Controllable</span>
+        <span class="key"><span class="swatch n"></span>Non-controllable</span>
+      </div>
+    </div>
+    <div class="chart" id="wkChart"></div>
+    <div class="footnote" id="wkNote"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 id="topTitle">Top complaint types</h2>
+      <span class="sub" id="topSub"></span>
+      <div class="legend">
+        <span class="key"><span class="swatch c"></span>Controllable</span>
+        <span class="key"><span class="swatch n"></span>Non-controllable</span>
+      </div>
+    </div>
+    <div class="topbars" id="topBars"></div>
+    <div class="footnote">Top 8 by count for the selected month. All 20 types are in the table below.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 id="moTitle">Monthly breakdown</h2>
+      <span class="sub" id="moSub"></span>
+      <div class="legend">
+        <span class="key"><span class="swatch c"></span>Controllable</span>
+        <span class="key"><span class="swatch n"></span>Non-controllable</span>
+      </div>
+    </div>
+    <div class="chart" id="moChart"></div>
+    <details class="tblview"><summary>View monthly totals as a table</summary>
+      <div class="tscroll" id="moTable"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 id="tbTitle">Complaint types</h2>
+      <span class="sub" id="tbSub"></span>
+    </div>
+    <div class="tscroll" id="tbWrap"></div>
+    <div class="footnote">Week columns and the Total column follow the source filter above. The Drivo / Other / Overall columns always show the full month split by source. Duplicate-flagged records are excluded everywhere.</div>
+  </div>
+</div>
+
+<div id="tooltip" role="status"></div>
+
+<script>
+const DATA = __DATA__;
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WEEK_LABELS = ['1–7', '8–14', '15–21', '22–31'];
+const weekOf = d => d <= 7 ? 0 : d <= 14 ? 1 : d <= 21 ? 2 : 3;
+const nTypes = DATA.types.length;
+const fmt = n => n.toLocaleString('en-US');
+
+/* latest date present in the data */
+let latest = [0, 0, 0];
+for (const [y, m, d] of DATA.records) {
+  if (y > latest[0] || (y === latest[0] && (m > latest[1] || (m === latest[1] && d > latest[2])))) latest = [y, m, d];
+}
+const [curY, curM, curD] = latest;
+
+/* state */
+const state = { year: curY, month: curM, src: 2 };  /* src: 0 Drivo, 1 other, 2 overall */
+
+/* core filter-sum: returns marks matching predicate, honoring src (2 = both) */
+function sum(pred, src) {
+  let t = 0;
+  for (const r of DATA.records) {
+    if (src !== 2 && r[3] !== src) continue;
+    if (pred(r)) t += r[5];
+  }
+  return t;
+}
+/* per-type × per-week matrix for a (year, month, src) slice */
+function slice(year, month, src) {
+  const byTypeWeek = Array.from({ length: nTypes }, () => [0, 0, 0, 0]);
+  const catWeek = { C: [0, 0, 0, 0], N: [0, 0, 0, 0] };
+  for (const [y, m, d, s, t, n] of DATA.records) {
+    if (y !== year || m !== month) continue;
+    if (src !== 2 && s !== src) continue;
+    const w = weekOf(d);
+    byTypeWeek[t][w] += n;
+    catWeek[DATA.types[t].cat][w] += n;
+  }
+  return { byTypeWeek, catWeek };
+}
+const monthTotal = (y, m, src) => sum(r => r[0] === y && r[1] === m, src);
+const mtd = (y, m, dMax, src) => sum(r => r[0] === y && r[1] === m && r[2] <= dMax, src);
+
+const srcName = () => ['Drivo Survey', 'Other sources', 'All sources'][state.src];
+
+/* ---------- header ---------- */
+document.getElementById('asof').textContent =
+  `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · duplicates excluded · source: CS database sheet`;
+
+/* ---------- filters ---------- */
+const years = [...new Set(DATA.records.map(r => r[0]))].sort();
+const selYear = document.getElementById('selYear');
+const selMonth = document.getElementById('selMonth');
+years.forEach(y => selYear.add(new Option(y, y)));
+selYear.value = state.year;
+
+function fillMonths() {
+  const avail = new Set(DATA.records.filter(r => r[0] === state.year).map(r => r[1]));
+  selMonth.innerHTML = '';
+  [...avail].sort((a, b) => a - b).forEach(m => selMonth.add(new Option(MONTH_NAMES[m - 1], m)));
+  if (!avail.has(state.month)) state.month = Math.max(...avail);
+  selMonth.value = state.month;
+}
+selYear.onchange = () => { state.year = +selYear.value; fillMonths(); render(); };
+selMonth.onchange = () => { state.month = +selMonth.value; render(); };
+document.querySelectorAll('#segSrc button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('#segSrc button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    state.src = +b.dataset.src;
+    render();
+  };
+});
+
+/* ---------- tooltip ---------- */
+const tt = document.getElementById('tooltip');
+function showTip(html, x, y) {
+  tt.innerHTML = html;
+  tt.style.display = 'block';
+  const r = tt.getBoundingClientRect();
+  tt.style.left = Math.min(x + 14, innerWidth - r.width - 10) + 'px';
+  tt.style.top = Math.min(y + 14, innerHeight - r.height - 10) + 'px';
+}
+function hideTip() { tt.style.display = 'none'; }
+function tipHTML(title, c, n) {
+  const rows = [['Controllable', c, 'var(--ctrl)'], ['Non-controllable', n, 'var(--nonctrl)']]
+    .map(([lab, v, col]) => `<div class="tt-row"><span class="lhs"><span class="dot" style="background:${col}"></span>${lab}</span><b>${fmt(v)}</b></div>`).join('');
+  return `<div class="tt-title">${title}</div>${rows}<div class="tt-row"><span class="lhs">Total</span><b>${fmt(c + n)}</b></div>`;
+}
+
+/* ---------- stacked column chart ---------- */
+function niceMax(v) {
+  if (v <= 0) return 4;
+  const raw = v / 4;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map(k => k * pow).find(s => s * 4 >= v);
+  return step * 4;
+}
+function columnChart(el, items, opts) {
+  /* items: [{label, c, n, now?, muted?}] */
+  const max = niceMax(Math.max(1, ...items.map(i => i.c + i.n)));
+  const plot = document.createElement('div');
+  plot.className = 'plot';
+  for (let g = 0; g <= 4; g++) {
+    const line = document.createElement('div');
+    line.className = 'gridline' + (g === 4 ? ' zero' : '');
+    line.style.top = (g * 25) + '%';
+    line.innerHTML = `<span class="tick">${fmt(Math.round(max * (4 - g) / 4))}</span>`;
+    plot.appendChild(line);
+  }
+  const cols = document.createElement('div');
+  cols.className = 'cols';
+  const H = 230;
+  items.forEach(it => {
+    const total = it.c + it.n;
+    const col = document.createElement('div');
+    col.className = 'col';
+    col.tabIndex = 0;
+    col.setAttribute('aria-label', `${it.tip || it.label}: ${fmt(total)} complaints (${fmt(it.c)} controllable, ${fmt(it.n)} non-controllable)`);
+    const hC = Math.round(total ? (it.c / max) * H : 0);
+    const hN = Math.round(total ? (it.n / max) * H : 0);
+    const capTxt = it.showCap ? `<div class="cap">${fmt(total)}</div>` : '';
+    const nTop = hN > 0, cTop = !nTop && hC > 0;
+    col.innerHTML = `${capTxt}<div class="stack">
+      <div class="seg-c${cTop ? ' top' : ''}" style="height:${hC}px"></div>
+      <div class="seg-n${nTop ? ' top' : ''}" style="height:${hN}px;${hN === 0 ? 'margin:0;' : ''}"></div>
+    </div>`;
+    const tip = e => showTip(tipHTML(it.tip || it.label, it.c, it.n), e.clientX ?? col.getBoundingClientRect().x, e.clientY ?? col.getBoundingClientRect().y);
+    col.addEventListener('mousemove', tip);
+    col.addEventListener('mouseleave', hideTip);
+    col.addEventListener('focus', tip);
+    col.addEventListener('blur', hideTip);
+    cols.appendChild(col);
+  });
+  plot.appendChild(cols);
+  const xband = document.createElement('div');
+  xband.className = 'xband';
+  xband.innerHTML = items.map(it => `<div class="xlab${it.now ? ' now' : ''}">${it.label}</div>`).join('');
+  el.replaceChildren(plot, xband);
+}
+
+/* ---------- render ---------- */
+function render() {
+  const { year, month, src } = state;
+  const mName = MONTH_NAMES[month - 1];
+
+  /* --- tiles --- */
+  const mtdCur = mtd(curY, curM, curD, src);
+  const prevM = curM === 1 ? 12 : curM - 1, prevY = curM === 1 ? curY - 1 : curY;
+  const mtdPrev = mtd(prevY, prevM, curD, src);
+  const diff = mtdCur - mtdPrev;
+  const dCls = diff > 0 ? 'bad' : diff < 0 ? 'good' : 'flat';
+  const dTxt = diff === 0 ? 'even with' : `${diff > 0 ? '▲ +' : '▼ −'}${fmt(Math.abs(diff))} vs`;
+
+  const s = slice(year, month, src);
+  const cTot = s.catWeek.C.reduce((a, b) => a + b, 0);
+  const nTot = s.catWeek.N.reduce((a, b) => a + b, 0);
+  const mTot = cTot + nTot;
+  const pct = v => mTot ? Math.round(v / mTot * 100) + '%' : '–';
+  const drv = monthTotal(year, month, 0), oth = monthTotal(year, month, 1);
+
+  document.getElementById('tiles').innerHTML = `
+    <div class="tile">
+      <div class="label">MTD · ${MONTH_ABBR[curM - 1]} 1–${curD}, ${curY}</div>
+      <div class="value">${fmt(mtdCur)}</div>
+      <div class="delta ${dCls}">${dTxt} ${MONTH_ABBR[prevM - 1]} 1–${curD}</div>
+      <div class="sub">${srcName()}</div>
+    </div>
+    <div class="tile">
+      <div class="label">${mName} ${year} total</div>
+      <div class="value">${fmt(mTot)}</div>
+      <div class="sub">Drivo Survey ${fmt(drv)} · Other ${fmt(oth)} · Overall ${fmt(drv + oth)}</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="keydot" style="background:var(--ctrl)"></span>Controllable</div>
+      <div class="value">${fmt(cTot)}</div>
+      <div class="sub">${pct(cTot)} of ${mName} · ${srcName()}</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="keydot" style="background:var(--nonctrl)"></span>Non-controllable</div>
+      <div class="value">${fmt(nTot)}</div>
+      <div class="sub">${pct(nTot)} of ${mName} · ${srcName()}</div>
+    </div>`;
+
+  /* --- weekly chart --- */
+  document.getElementById('wkTitle').textContent = `Weekly breakdown · ${mName} ${year}`;
+  document.getElementById('wkSub').textContent = srcName();
+  const isCurrent = year === curY && month === curM;
+  const wkItems = WEEK_LABELS.map((lab, w) => ({
+    label: lab,
+    tip: `${mName} ${lab}`,
+    c: s.catWeek.C[w],
+    n: s.catWeek.N[w],
+    showCap: true,
+    now: isCurrent && weekOf(curD) === w,
+  }));
+  columnChart(document.getElementById('wkChart'), wkItems);
+  document.getElementById('wkNote').textContent = isCurrent
+    ? `${mName} is in progress — data through ${MONTH_ABBR[curM - 1]} ${curD}; later weeks are not yet reported.` : '';
+
+  /* --- top complaint types --- */
+  document.getElementById('topSub').textContent = `${mName} ${year} · ${srcName()}`;
+  const sD0 = slice(year, month, 0), sO0 = slice(year, month, 1);
+  const ranked = DATA.types
+    .map((t, i) => ({ ...t, i, v: s.byTypeWeek[i].reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 8);
+  const maxV = Math.max(1, ...ranked.map(r => r.v));
+  const topBars = document.getElementById('topBars');
+  topBars.innerHTML = ranked.map((r, rk) => `
+    <div class="tb-row" tabindex="0" data-i="${r.i}"
+         aria-label="${rk + 1}. ${r.name}: ${fmt(r.v)} complaints (${r.cat === 'C' ? 'controllable' : 'non-controllable'})">
+      <div class="tb-name"><span class="tb-rank">${rk + 1}</span>${r.name}</div>
+      <div class="tb-track">
+        <div class="tb-fill ${r.cat === 'C' ? 'c' : 'n'}" style="width:${(r.v / maxV * 100).toFixed(1)}%"></div>
+        <span class="tb-val">${fmt(r.v)}</span>
+      </div>
+    </div>`).join('');
+  topBars.querySelectorAll('.tb-row').forEach(row => {
+    const i = +row.dataset.i;
+    const dv = sD0.byTypeWeek[i].reduce((a, b) => a + b, 0);
+    const ov = sO0.byTypeWeek[i].reduce((a, b) => a + b, 0);
+    const html = `<div class="tt-title">${DATA.types[i].name}</div>
+      <div class="tt-row"><span class="lhs">Drivo Survey</span><b>${fmt(dv)}</b></div>
+      <div class="tt-row"><span class="lhs">Other sources</span><b>${fmt(ov)}</b></div>
+      <div class="tt-row"><span class="lhs">Overall</span><b>${fmt(dv + ov)}</b></div>`;
+    const tip = e => showTip(html, e.clientX ?? row.getBoundingClientRect().x, e.clientY ?? row.getBoundingClientRect().y);
+    row.addEventListener('mousemove', tip);
+    row.addEventListener('mouseleave', hideTip);
+    row.addEventListener('focus', tip);
+    row.addEventListener('blur', hideTip);
+  });
+
+  /* --- monthly chart --- */
+  document.getElementById('moTitle').textContent = `Monthly breakdown · ${year}`;
+  document.getElementById('moSub').textContent = srcName();
+  const moAvail = [...new Set(DATA.records.filter(r => r[0] === year).map(r => r[1]))].sort((a, b) => a - b);
+  const moData = moAvail.map(m => {
+    const c = sum(r => r[0] === year && r[1] === m && DATA.types[r[4]].cat === 'C', src);
+    const n = sum(r => r[0] === year && r[1] === m && DATA.types[r[4]].cat === 'N', src);
+    return { label: MONTH_ABBR[m - 1], tip: `${MONTH_NAMES[m - 1]} ${year}`, c, n, showCap: m === month, now: m === month, m };
+  });
+  columnChart(document.getElementById('moChart'), moData);
+  document.getElementById('moTable').innerHTML = `<table>
+    <tr><th>Month</th><th>Controllable</th><th>Non-controllable</th><th>Total</th></tr>
+    ${moData.map(d => `<tr><td>${d.tip}</td><td>${fmt(d.c)}</td><td>${fmt(d.n)}</td><td>${fmt(d.c + d.n)}</td></tr>`).join('')}
+  </table>`;
+
+  /* --- breakdown table --- */
+  document.getElementById('tbTitle').textContent = `Complaint types · ${mName} ${year}`;
+  document.getElementById('tbSub').textContent = `weeks shown for: ${srcName()}`;
+  const sD = slice(year, month, 0), sO = slice(year, month, 1);
+  const td = (v, cls = '') => `<td class="${cls}${v === 0 ? ' zero' : ''}">${v === 0 ? '·' : fmt(v)}</td>`;
+  const rowFor = ti => {
+    const w = s.byTypeWeek[ti];
+    const tot = w[0] + w[1] + w[2] + w[3];
+    const dv = sD.byTypeWeek[ti].reduce((a, b) => a + b, 0);
+    const ov = sO.byTypeWeek[ti].reduce((a, b) => a + b, 0);
+    return `<tr><td>${DATA.types[ti].name}</td>${w.map(v => td(v)).join('')}${td(tot)}${td(dv, 'div')}${td(ov)}${td(dv + ov)}</tr>`;
+  };
+  const sectionRows = cat => {
+    const idxs = DATA.types.map((t, i) => [t, i]).filter(([t]) => t.cat === cat).map(([, i]) => i);
+    const wSub = [0, 1, 2, 3].map(w => idxs.reduce((a, i) => a + s.byTypeWeek[i][w], 0));
+    const dSub = idxs.reduce((a, i) => a + sD.byTypeWeek[i].reduce((x, y) => x + y, 0), 0);
+    const oSub = idxs.reduce((a, i) => a + sO.byTypeWeek[i].reduce((x, y) => x + y, 0), 0);
+    const name = cat === 'C' ? 'Controllable' : 'Non-controllable';
+    const color = cat === 'C' ? 'var(--ctrl)' : 'var(--nonctrl)';
+    return `<tr class="section"><td colspan="9"><span class="keydot" style="background:${color}"></span>${name}</td></tr>` +
+      idxs.map(rowFor).join('') +
+      `<tr class="subtotal"><td>${name} subtotal</td>${wSub.map(v => td(v)).join('')}${td(wSub.reduce((a, b) => a + b, 0))}${td(dSub, 'div')}${td(oSub)}${td(dSub + oSub)}</tr>`;
+  };
+  const wAll = [0, 1, 2, 3].map(w => s.catWeek.C[w] + s.catWeek.N[w]);
+  document.getElementById('tbWrap').innerHTML = `<table>
+    <tr><th>Complaint type</th>${WEEK_LABELS.map(l => `<th>${l}</th>`).join('')}<th>Total</th><th class="div">Drivo</th><th>Other</th><th>Overall</th></tr>
+    ${sectionRows('C')}${sectionRows('N')}
+    <tr class="grand"><td>All complaints</td>${wAll.map(v => td(v)).join('')}${td(mTot)}${td(drv, 'div')}${td(oth)}${td(drv + oth)}</tr>
+  </table>`;
+}
+
+fillMonths();
+render();
+</script>
