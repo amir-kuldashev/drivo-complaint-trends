@@ -281,11 +281,15 @@ const nTypes = DATA.types.length;
 const fmt = n => n.toLocaleString('en-US');
 
 /* latest date present in the data */
-let latest = [0, 0, 0];
-for (const [y, m, d] of DATA.records) {
-  if (y > latest[0] || (y === latest[0] && (m > latest[1] || (m === latest[1] && d > latest[2])))) latest = [y, m, d];
+let curY, curM, curD;
+function computeLatest() {
+  let latest = [0, 0, 0];
+  for (const [y, m, d] of DATA.records) {
+    if (y > latest[0] || (y === latest[0] && (m > latest[1] || (m === latest[1] && d > latest[2])))) latest = [y, m, d];
+  }
+  [curY, curM, curD] = latest;
 }
-const [curY, curM, curD] = latest;
+computeLatest();
 
 /* state */
 const state = { year: curY, month: curM, src: 2 };  /* src: 0 Drivo, 1 other, 2 overall */
@@ -318,15 +322,23 @@ const mtd = (y, m, dMax, src) => sum(r => r[0] === y && r[1] === m && r[2] <= dM
 const srcName = () => ['Drivo Survey', 'Other sources', 'All sources'][state.src];
 
 /* ---------- header ---------- */
-document.getElementById('asof').textContent =
-  `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · duplicates excluded · source: CS database sheet`;
+function setAsOf(status) {
+  document.getElementById('asof').textContent =
+    `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · duplicates excluded · ${status}`;
+}
+setAsOf(`saved snapshot from ${DATA.asOf}`);
 
 /* ---------- filters ---------- */
-const years = [...new Set(DATA.records.map(r => r[0]))].sort();
 const selYear = document.getElementById('selYear');
 const selMonth = document.getElementById('selMonth');
-years.forEach(y => selYear.add(new Option(y, y)));
-selYear.value = state.year;
+let userTouched = false;
+function fillYears() {
+  const years = [...new Set(DATA.records.map(r => r[0]))].sort();
+  selYear.innerHTML = '';
+  years.forEach(y => selYear.add(new Option(y, y)));
+  if (!years.includes(state.year)) state.year = years[years.length - 1];
+  selYear.value = state.year;
+}
 
 function fillMonths() {
   const avail = new Set(DATA.records.filter(r => r[0] === state.year).map(r => r[1]));
@@ -335,8 +347,8 @@ function fillMonths() {
   if (!avail.has(state.month)) state.month = Math.max(...avail);
   selMonth.value = state.month;
 }
-selYear.onchange = () => { state.year = +selYear.value; fillMonths(); render(); };
-selMonth.onchange = () => { state.month = +selMonth.value; render(); };
+selYear.onchange = () => { userTouched = true; state.year = +selYear.value; fillMonths(); render(); };
+selMonth.onchange = () => { userTouched = true; state.month = +selMonth.value; render(); };
 document.querySelectorAll('#segSrc button').forEach(b => {
   b.onclick = () => {
     document.querySelectorAll('#segSrc button').forEach(x => x.setAttribute('aria-pressed', x === b));
@@ -550,6 +562,90 @@ function render() {
   </table>`;
 }
 
+fillYears();
 fillMonths();
 render();
+
+/* ---------- live refresh from the published sheet ----------
+   Runs on every page load when the dashboard is hosted on a web server
+   (e.g. GitHub Pages). Skipped for local file:// opens, where Google
+   blocks cross-origin requests — there the embedded snapshot is shown.
+   Aggregation rules mirror refresh_dashboard.py exactly. */
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSnM14ZYjcNke8a-6MrTA_kbDzE4DgwaAjVECGbP_OQj-y6DEBkz5AlYKk7bl_x4WiY4pGJWh7feS7w/pub?output=csv';
+const MONTHS_IDX = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+/* sheet column for each entry of DATA.types, same order */
+const SHEET_COLS = [
+  'Reserved Vehicle Unavailable', 'Long shuttle', 'Long wait', 'Rude service',
+  'Shuttle Service', 'Unexpected Fees', 'Unhelpful Service', 'Upsell complaints',
+  'Vehicle Cleanlines', 'Vehicle Conditions',
+  'Call Center Complaints', 'Credit Check', 'Damage Claims', 'Deposit Hold',
+  'Geozone', 'Insurance Verification', 'Location Complaint', 'No Information',
+  'Other Complaints', 'Tolls and Violations',
+];
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; }
+    else if (ch !== '\r') field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+async function refreshLive() {
+  if (location.protocol === 'file:') return;
+  try {
+    const res = await fetch(CSV_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = parseCSV((await res.text()).replace(/^\uFEFF/, ''));
+    const head = rows.shift();
+    const col = {};
+    head.forEach((h, i) => { col[h] = i; });
+    const missing = ['Date of Complaint', 'YEAR ', 'Source', 'Duplicate?', ...SHEET_COLS]
+      .filter(c => !(c in col));
+    if (missing.length) throw new Error('sheet layout changed — missing columns: ' + missing.join(', '));
+
+    const agg = new Map();
+    for (const r of rows) {
+      if ((r[col['Duplicate?']] || '').trim().toLowerCase() === 'yes') continue;
+      const dt = (r[col['Date of Complaint']] || '').trim();
+      if (!dt) continue;  /* empty filler rows */
+      const [dayS, monS = ''] = dt.split('-');
+      const day = parseInt(dayS, 10);
+      const mon = MONTHS_IDX[monS.charAt(0).toUpperCase() + monS.slice(1, 3).toLowerCase()];
+      const year = parseInt((r[col['YEAR ']] || '').trim(), 10);
+      if (!day || !mon || !year) continue;
+      const src = (r[col['Source']] || '').toLowerCase().includes('drivo') ? 0 : 1;
+      SHEET_COLS.forEach((c, ti) => {
+        if ((r[col[c]] || '').trim()) {
+          const k = `${year},${mon},${day},${src},${ti}`;
+          agg.set(k, (agg.get(k) || 0) + 1);
+        }
+      });
+    }
+    if (!agg.size) throw new Error('no complaint records found in the sheet');
+
+    DATA.records = [...agg].map(([k, v]) => [...k.split(',').map(Number), v]);
+    computeLatest();
+    if (!userTouched) { state.year = curY; state.month = curM; }
+    fillYears();
+    fillMonths();
+    render();
+    setAsOf('live from the sheet, loaded ' +
+      new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
+  } catch (e) {
+    setAsOf(`couldn't load live data (${e.message}) — saved snapshot from ${DATA.asOf}`);
+  }
+}
+refreshLive();
 </script>

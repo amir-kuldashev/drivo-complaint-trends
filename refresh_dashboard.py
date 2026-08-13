@@ -25,6 +25,7 @@ CSV_URL = ('https://docs.google.com/spreadsheets/d/e/'
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / 'dashboard_template.html'
 OUT = HERE / 'dashboard.html'
+INDEX = HERE / 'index.html'  # same page; the name GitHub Pages serves at the root URL
 
 MONTHS = {m: i + 1 for i, m in enumerate(
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])}
@@ -106,7 +107,9 @@ def main():
     }
     html = TEMPLATE.read_text()
     assert '__DATA__' in html, 'dashboard_template.html is missing the __DATA__ placeholder'
-    OUT.write_text(html.replace('__DATA__', json.dumps(data, separators=(',', ':')), 1))
+    built = html.replace('__DATA__', json.dumps(data, separators=(',', ':')), 1)
+    OUT.write_text(built)
+    INDEX.write_text(built)
 
     note = f', {skipped} dated rows unparseable and skipped' if skipped else ''
     print(f'Dashboard refreshed: {len(rows):,} sheet rows, '
