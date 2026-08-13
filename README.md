@@ -8,6 +8,13 @@ broken down weekly and monthly by complaint type.
 Open **`dashboard.html`** in any browser — no server or internet connection needed.
 It shows the data as of the date in the header ("Data through …").
 
+When the page is served from a web address (e.g. GitHub Pages), it goes further:
+on every load it fetches the latest published sheet directly and recomputes all
+numbers in the browser — the header then says "live from the sheet". Opened as a
+local file it shows the last saved snapshot instead (Google blocks data requests
+from local files). If the live fetch fails for any reason, the page falls back
+to the saved snapshot and says so in the header.
+
 ## Refreshing the data
 
 Run **`refresh_dashboard.py`** (requires Python 3, no extra packages):
@@ -54,5 +61,6 @@ Commit and push the updated `dashboard.html` to share the refreshed numbers.
 | File | Purpose |
 |---|---|
 | `dashboard.html` | The dashboard — open it in a browser |
-| `refresh_dashboard.py` | Rebuilds `dashboard.html` from the live sheet |
-| `dashboard_template.html` | Page design without data; the script fills it in |
+| `index.html` | Identical copy of `dashboard.html`, the filename GitHub Pages serves at the root URL |
+| `refresh_dashboard.py` | Rebuilds `dashboard.html` and `index.html` from the live sheet |
+| `dashboard_template.html` | Page design without data; the script fills it in — edit this to change the dashboard, then rerun the script |
