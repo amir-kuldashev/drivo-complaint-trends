@@ -52,6 +52,8 @@ still succeeds — it just builds without the Closed R/As tile and says so.
 
 - Rows flagged `Duplicate? = Yes` in the sheet are excluded everywhere; a blank
   flag counts as not-a-duplicate.
+- Rows with `Confirmed = N` (investigated and not confirmed) are excluded
+  everywhere. A blank `Confirmed` means not investigated and counts; `Y` counts.
 - A record marked with several complaint types counts once under each type;
   records with no complaint type marked (e.g. positive reviews) are not counted.
 - Source split is case-insensitive: any source containing "drivo" counts as
@@ -74,7 +76,7 @@ still succeeds — it just builds without the Closed R/As tile and says so.
 
 - The rate is **complaint marks ÷ closed R/As**, using the same mark count as
   every other card, so the overall figure reconciles with the month total tile
-  (July 2026: 870 ÷ 6,758 = 12.87%). A complaint logged under three types counts
+  (July 2026: 835 ÷ 6,758 = 12.36%). A complaint logged under three types counts
   three times, so this is marks-per-rental rather than the share of rentals that
   drew a complaint, and it could in principle exceed 100%.
 - Bars are ranked highest-rate-first, and each is labelled with its own

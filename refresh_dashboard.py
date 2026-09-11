@@ -116,7 +116,7 @@ def main():
         sys.exit(1)
 
     rows = list(csv.DictReader(io.StringIO(raw)))
-    missing = [c for c in ['Date of Complaint', 'YEAR ', 'Source', 'Duplicate?', 'Location']
+    missing = [c for c in ['Date of Complaint', 'YEAR ', 'Source', 'Duplicate?', 'Location', 'Confirmed']
                + [t[1] for t in TYPES] if rows and c not in rows[0]]
     if missing:
         print(f'The sheet layout changed — missing columns: {missing}')
@@ -127,8 +127,14 @@ def main():
     agg = Counter()
     skipped = 0
     offloc = 0
+    unconfirmed = 0
     for r in rows:
         if r['Duplicate?'].strip().lower() == 'yes':
+            continue
+        # Investigated and not confirmed (Confirmed = N) is not a complaint. Blank
+        # means not investigated and counts; Y counts.
+        if r['Confirmed'].strip().upper() == 'N':
+            unconfirmed += 1
             continue
         dt = r['Date of Complaint'].strip()
         if not dt:
@@ -166,7 +172,8 @@ def main():
 
     note = f', {skipped} dated rows unparseable and skipped' if skipped else ''
     print(f'Dashboard refreshed: {len(rows):,} sheet rows, '
-          f'{sum(agg.values()):,} complaint marks after excluding duplicates{note}.')
+          f'{sum(agg.values()):,} complaint marks after excluding duplicates and '
+          f'{unconfirmed:,} unconfirmed rows (Confirmed = N){note}.')
     if offloc:
         print(f'{offloc:,} rows excluded: Location not one of {LOCS} (or an alias: {LOC_ALIASES}).')
     if rentals:
