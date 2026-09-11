@@ -64,7 +64,8 @@ still succeeds — it just builds without the Closed R/As tile and says so.
   Other Complaints, Tolls/Violations).
 - Sheet column mapping: "Fleet Failure" = the sheet's "Reserved Vehicle
   Unavailable" column; "Shuttle Driver" = "Shuttle Service".
-- Only complaints whose Location is one of JFK, LGA, EWR, BRK, BRKJS are counted.
+- Only complaints whose Location is one of JFK, LGA, EWR, BRK, BRKJS (or the
+  alias EWRCON, which counts as EWR) are counted.
   Rows with any other Location value are **excluded entirely** — they do not appear
   in any tile, chart, or table, and are not part of "All locations". The refresh
   script prints how many rows it dropped for this reason.
@@ -83,7 +84,9 @@ still succeeds — it just builds without the Closed R/As tile and says so.
   worker serves a cached snapshot which a **separate** job pushes from TSD —
   nothing in this repo talks to TSD directly.
 - Only the five locations the feed reports are shown, under the feed's own codes:
-  JFK, LGA, EWR, BRK, BRKJS.
+  JFK, LGA, EWR, BRK, BRKJS. The code **EWRCON** is part of Newark: its closed
+  R/As (and any complaints tagged with it) are counted under EWR, in both the
+  refresh script and the in-browser live refresh.
 - The tile is a rental count, so the source filter does not apply to it. On the
   chart the filter narrows the **complaints only** — the denominator is always
   every closed R/A — so filtering to one source gives that channel's rate.

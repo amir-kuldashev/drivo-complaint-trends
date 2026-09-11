@@ -37,6 +37,15 @@ MONTHS = {m: i + 1 for i, m in enumerate(
 # are dropped entirely, so every count on the dashboard belongs to one of these.
 LOCS = ['JFK', 'LGA', 'EWR', 'BRK', 'BRKJS']
 LOC_IDX = {code: i for i, code in enumerate(LOCS)}
+# Codes that are the same branch under another name. TSD (and the sheet) now use
+# EWRCON for part of Newark; its closed R/As and complaints all count under EWR.
+LOC_ALIASES = {'EWRCON': 'EWR'}
+
+
+def loc_index(code):
+    """Index into LOCS for a raw location string, or None if it is not one of ours."""
+    code = str(code or '').strip().upper()
+    return LOC_IDX.get(LOC_ALIASES.get(code, code))
 
 # (display name, sheet column, category) — C = controllable, N = non-controllable.
 # Order must stay in sync with what the dashboard template expects.
@@ -76,21 +85,24 @@ def fetch_rentals():
     ratio section simply hides itself, so a worker outage never blocks a refresh.
     """
     try:
-        payload = json.loads(urllib.request.urlopen(RENTALS_URL, timeout=30).read().decode('utf-8'))
+        # The worker sits behind Cloudflare, which answers 403 to Python's default
+        # User-Agent; any browser-like one is accepted.
+        req = urllib.request.Request(RENTALS_URL, headers={'User-Agent': 'Mozilla/5.0 drivo-complaint-trends/refresh'})
+        payload = json.loads(urllib.request.urlopen(req, timeout=30).read().decode('utf-8'))
     except Exception as e:
         print(f'Closed-rental feed unavailable ({e}) — building without the ratio section.')
         return [], None
 
     agg = Counter()
     for row in payload.get('rows') or []:
-        loc = str(row.get('location') or '').strip().upper()
-        if loc not in LOC_IDX:
+        li = loc_index(row.get('location'))
+        if li is None:
             continue
         try:
             year, mon = (int(x) for x in str(row.get('month') or '').split('-')[:2])
         except Exception:
             continue
-        agg[(year, mon, LOC_IDX[loc])] += int(row.get('count') or 0)
+        agg[(year, mon, li)] += int(row.get('count') or 0)
     return [[*k, v] for k, v in sorted(agg.items())], payload.get('pushedAt')
 
 
@@ -130,11 +142,10 @@ def main():
             skipped += 1
             continue
         src = 0 if 'drivo' in r['Source'].lower() else 1
-        loc = r['Location'].strip().upper()
-        if loc not in LOC_IDX:
+        li = loc_index(r['Location'])
+        if li is None:
             offloc += 1
             continue
-        li = LOC_IDX[loc]
         for ti, (_, col, _) in enumerate(TYPES):
             if r[col].strip():
                 agg[(year, mon, day, src, li, ti)] += 1
@@ -157,7 +168,7 @@ def main():
     print(f'Dashboard refreshed: {len(rows):,} sheet rows, '
           f'{sum(agg.values()):,} complaint marks after excluding duplicates{note}.')
     if offloc:
-        print(f'{offloc:,} rows excluded: Location not one of {LOCS}.')
+        print(f'{offloc:,} rows excluded: Location not one of {LOCS} (or an alias: {LOC_ALIASES}).')
     if rentals:
         print(f'Closed R/As: {sum(r[3] for r in rentals):,} across {len(LOCS)} locations '
               f'(pushed {pushed_at}).')

@@ -308,9 +308,18 @@ const DATA = __DATA__;
 DATA.locs = DATA.locs || ['JFK', 'LGA', 'EWR', 'BRK', 'BRKJS'];
 DATA.rentals = DATA.rentals || [];
 
+/* Codes that are the same branch under another name: EWRCON is part of Newark, so
+   its closed R/As and complaints count under EWR. Mirrors refresh_dashboard.py. */
+const LOC_ALIASES = { EWRCON: 'EWR' };
+function locIndex(raw) {
+  const code = String(raw || '').trim().toUpperCase();
+  return DATA.locs.indexOf(LOC_ALIASES[code] || code);
+}
+
 /* Record layout: [year, month, day, src, loc, type, marks].
-   `loc` indexes DATA.locs. Complaints whose Location is not one of those five are
-   excluded at build time, so every record here belongs to a real location. */
+   `loc` indexes DATA.locs. Complaints whose Location is not one of those five (or
+   an alias of one) are excluded at build time, so every record here belongs to a
+   real location. */
 const ALL_LOCS = -1;
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -840,7 +849,7 @@ async function refreshLive() {
       const year = parseInt((r[col['YEAR ']] || '').trim(), 10);
       if (!day || !mon || !year) continue;
       const src = (r[col['Source']] || '').toLowerCase().includes('drivo') ? 0 : 1;
-      const li = DATA.locs.indexOf((r[col['Location']] || '').trim().toUpperCase());
+      const li = locIndex(r[col['Location']]);
       if (li < 0) continue;  /* excluded, same as the build-time rule */
       SHEET_COLS.forEach((c, ti) => {
         if ((r[col[c]] || '').trim()) {
@@ -879,7 +888,7 @@ async function refreshRentals() {
     const payload = await res.json();
     const agg = new Map();
     for (const row of payload.rows || []) {
-      const li = DATA.locs.indexOf(String(row.location || '').trim().toUpperCase());
+      const li = locIndex(row.location);
       if (li < 0) continue;
       const [year, mon] = String(row.month || '').split('-').map(Number);
       if (!year || !mon) continue;
