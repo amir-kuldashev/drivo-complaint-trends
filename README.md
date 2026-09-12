@@ -119,8 +119,10 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
 
 - Rows flagged `Duplicate? = Yes` in the sheet are excluded everywhere; a blank
   flag counts as not-a-duplicate.
-- Rows with `Confirmed = N` (investigated and not confirmed) are excluded
-  everywhere. A blank `Confirmed` means not investigated and counts; `Y` counts.
+- The `Confirmed` column (investigation outcome) does **not** affect the count:
+  a complaint that was investigated and not confirmed is still a logged complaint.
+  (An exclusion rule for `Confirmed = N` existed from 11 to 13 September 2026 and
+  was dropped.)
 - A record marked with several complaint types counts once under each type;
   records with no complaint type marked (e.g. positive reviews) are not counted.
 - Source split is case-insensitive: any source containing "drivo" counts as

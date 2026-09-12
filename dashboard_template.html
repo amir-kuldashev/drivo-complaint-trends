@@ -513,7 +513,7 @@ function renderRate() {
 /* ---------- header ---------- */
 function setAsOf(status) {
   document.getElementById('asof').textContent =
-    `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · duplicates and unconfirmed excluded · ${status}`;
+    `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · duplicates excluded · ${status}`;
 }
 setAsOf(`saved snapshot from ${DATA.asOf}`);
 
@@ -832,15 +832,14 @@ async function refreshLive() {
     const head = rows.shift();
     const col = {};
     head.forEach((h, i) => { col[h] = i; });
-    const missing = ['Date of Complaint', 'YEAR ', 'Source', 'Duplicate?', 'Location', 'Confirmed', ...SHEET_COLS]
+    const missing = ['Date of Complaint', 'YEAR ', 'Source', 'Duplicate?', 'Location', ...SHEET_COLS]
       .filter(c => !(c in col));
     if (missing.length) throw new Error('sheet layout changed — missing columns: ' + missing.join(', '));
 
     const agg = new Map();
     for (const r of rows) {
       if ((r[col['Duplicate?']] || '').trim().toLowerCase() === 'yes') continue;
-      /* Investigated and not confirmed is not a complaint; blank (not investigated) and Y count. */
-      if ((r[col['Confirmed']] || '').trim().toUpperCase() === 'N') continue;
+      /* Every logged complaint counts regardless of the Confirmed column (mirrors refresh_dashboard.py). */
       const dt = (r[col['Date of Complaint']] || '').trim();
       if (!dt) continue;  /* empty filler rows */
       const [dayS, monS = ''] = dt.split('-');
