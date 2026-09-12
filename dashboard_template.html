@@ -404,18 +404,9 @@ const rentalMonths = () =>
   [...new Set(DATA.rentals.map(([y, m]) => y * 100 + m))]
     .sort((a, b) => a - b).map(k => [Math.trunc(k / 100), k % 100]);
 
-/* A month still being filled in by the TSD push sits far below a normal month,
-   so it is labelled rather than presented as a finished total. */
-function typicalMonth() {
-  const v = rentalMonths().map(([y, m]) => sumArr(rentByLoc(y, m))).sort((a, b) => a - b);
-  if (!v.length) return 0;
-  const mid = Math.floor(v.length / 2);
-  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
-}
-function isPartial(year, month) {
-  const t = sumArr(rentByLoc(year, month));
-  return t > 0 && t < typicalMonth() * 0.5;
-}
+/* Closed R/As come straight from TSD, so the latest month is simply month to
+   date and is shown as such — nothing is withheld. */
+const isMonthToDate = (year, month) => year === curY && month === curM;
 
 /* ---------- complaint rate by location ----------
    Numerator is type marks, the same figure the tiles and tables above show, so
@@ -448,7 +439,6 @@ function renderRate() {
   const shown = one ? [state.loc] : DATA.locs.map((_, i) => i);
   const totC = shown.reduce((t, i) => t + (marks[i] || 0), 0);
   const totR = shown.reduce((t, i) => t + (rent[i] || 0), 0);
-  const partial = isPartial(year, month);
 
   document.getElementById('crTitle').textContent =
     one ? `Complaint rate · ${DATA.locs[state.loc]} · ${mName} ${year}`
@@ -461,11 +451,6 @@ function renderRate() {
   if (!totR) {
     bars.innerHTML = `<div class="warn">No closed R/A data for <b>${mName} ${year}</b>, so no rate can be shown. The feed currently covers ${
       rentalMonths().map(([y, m]) => `${MONTH_ABBR[m - 1]} ${y}`).join(', ')}.</div>`;
-  } else if (partial) {
-    bars.innerHTML = `<div class="warn">Rate withheld: <b>${mName} ${year}</b> has only
-      <b>${fmt(totR)}</b> closed R/As on record against a typical <b>${fmt(Math.round(typicalMonth()))}</b>
-      per month, so the TSD push has not caught up. Dividing by it would overstate every location
-      several-fold. ${fmt(totC)} complaints are logged for the month.</div>`;
   } else {
     /* Ranked worst-first — the point of the chart is which location leads. */
     const rows = shown
@@ -498,7 +483,8 @@ function renderRate() {
 
   const fmtWhen = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const parts = [];
-  if (totR && !partial) parts.push(`Overall ${fmt(totC)} complaints ÷ ${fmt(totR)} closed R/As = <b>${fmtPct(rate(totC, totR))}</b>.`);
+  if (totR) parts.push(`Overall ${fmt(totC)} complaints ÷ ${fmt(totR)} closed R/As = <b>${fmtPct(rate(totC, totR))}</b>`
+    + (isMonthToDate(year, month) ? ` (month to date, through ${MONTH_ABBR[curM - 1]} ${curD}).` : '.'));
   parts.push('Counts type marks, the same basis as the cards above, so a complaint logged under several types is counted once per type.');
   if (src !== 2) parts.push(`The source filter narrows the complaints only — the denominator stays every closed R/A.`);
   if (DATA.rentalsSource === 'tsd') {
@@ -515,10 +501,10 @@ function renderRate() {
     const mk = marksByLoc(y, m, src), rn = rentByLoc(y, m);
     const c = shown.reduce((t, i) => t + (mk[i] || 0), 0);
     const r = shown.reduce((t, i) => t + (rn[i] || 0), 0);
-    const p = isPartial(y, m);
+    const mtd = isMonthToDate(y, m);
     return `<tr${y === year && m === month ? ' class="subtotal"' : ''}>
-      <td>${MONTH_ABBR[m - 1]} ${y}${p ? ' <span style="color:var(--muted)">(incomplete)</span>' : ''}</td>
-      <td>${fmt(c)}</td><td>${fmt(r)}</td><td>${p ? '—' : fmtPct(rate(c, r))}</td></tr>`;
+      <td>${MONTH_ABBR[m - 1]} ${y}${mtd ? ' <span style="color:var(--muted)">(to date)</span>' : ''}</td>
+      <td>${fmt(c)}</td><td>${fmt(r)}</td><td>${fmtPct(rate(c, r))}</td></tr>`;
   }).join('');
   document.getElementById('crTable').innerHTML =
     `<table><thead><tr><th>Month</th><th>Complaints</th><th>Closed R/As</th><th>Rate</th></tr></thead><tbody>${trend}</tbody></table>`;
@@ -644,8 +630,7 @@ function rentalTile(year, month, mName) {
   const r = one ? (per[state.loc] || 0) : sumArr(per);
   const perLoc = DATA.locs.map((code, i) => `${code} ${fmt(per[i])}`).join(' · ');
   const sub = !r ? `nothing reported for ${mName} ${year}`
-    : isPartial(year, month) ? `still being filled in — a typical month is ~${fmt(Math.round(typicalMonth()))}`
-    : one ? `${DATA.locs[state.loc]} only` : perLoc;
+    : (one ? `${DATA.locs[state.loc]} only` : perLoc) + (isMonthToDate(year, month) ? ' · month to date' : '');
   return `
     <div class="tile">
       <div class="label">Closed R/As · ${mName} ${year}</div>

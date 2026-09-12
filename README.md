@@ -168,9 +168,10 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
 - The tile is a rental count, so the source filter does not apply to it. On the
   chart the filter narrows the **complaints only** — the denominator is always
   every closed R/A — so filtering to one source gives that channel's rate.
-- A month whose closed-R/A total is under half the median month is still being
-  filled in by the TSD push. The tile says so, and the chart **withholds the
-  rate entirely** rather than publishing a figure inflated several-fold.
+- The current month is shown as it stands, marked "month to date" on the tile,
+  in the rate note and in the trend table. Nothing is withheld: closed R/As come
+  straight from TSD, so a low total for the latest month just means the month
+  is not over yet.
 
 ## Files
 
