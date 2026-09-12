@@ -16,17 +16,21 @@ import sys
 import urllib.request
 import webbrowser
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 CSV_URL = ('https://docs.google.com/spreadsheets/d/e/'
            '2PACX-1vSnM14ZYjcNke8a-6MrTA_kbDzE4DgwaAjVECGbP_OQj-y6DEBkz5AlYKk7bl_x4WiY4pGJWh7feS7w'
            '/pub?output=csv')
-# Closed rentals (R/As) pulled from TSD by a separate job and cached on this worker.
-# We only read its last-pushed snapshot; nothing here talks to TSD directly.
+# Closed rentals (R/As). Preferred source: closed_ras.csv, exported from TSD with
+# closed_ras.sql in Azure Data Studio (columns date, location, count; branch codes
+# as TSD has them, so EWRCON is present). Fallback, and filler for months the
+# export does not cover: a snapshot a separate job pushes from TSD to this worker.
+# That job drops EWRCON, which is why the export is preferred.
 RENTALS_URL = 'https://drivo-dashboard-api.mohamed-57f.workers.dev/api/closedrentals'
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / 'dashboard_template.html'
+EXPORT = HERE / 'closed_ras.csv'
 OUT = HERE / 'index.html'  # the filename GitHub Pages serves at the root URL
 
 MONTHS = {m: i + 1 for i, m in enumerate(
@@ -78,11 +82,53 @@ def open_browser():
         webbrowser.open(OUT.as_uri())
 
 
-def fetch_rentals():
-    """Closed R/As per (year, month, location) from the cached TSD snapshot.
+def read_export():
+    """Closed R/As per (year, month, loc_idx) from closed_ras.csv, or None if absent.
 
-    Returns ([[year, month, loc_idx, count], ...], pushed_at). On any failure the
-    ratio section simply hides itself, so a worker outage never blocks a refresh.
+    The file is the "Save as CSV" of query 1 in closed_ras.sql: one row per day and
+    branch with columns date, location, count. Also returns the per-month count of
+    EWRCON rows folded into EWR and the codes that were dropped, for the summary.
+    """
+    if not EXPORT.exists():
+        return None
+    with EXPORT.open(encoding='utf-8-sig', newline='') as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        sys.exit(f'{EXPORT.name} is empty — re-run query 1 of closed_ras.sql and save it again.')
+    cols = {c.strip().lower(): c for c in rows[0]}
+    missing = [c for c in ('date', 'location', 'count') if c not in cols]
+    if missing:
+        sys.exit(f'{EXPORT.name} is missing columns {missing}; it needs date, location, count '
+                 f'(save the result of query 1 in closed_ras.sql). Found: {list(rows[0])}')
+    agg, ewrcon, dropped, bad = Counter(), Counter(), Counter(), 0
+    for r in rows:
+        code = str(r[cols['location']] or '').strip().upper()
+        li = loc_index(code)
+        try:
+            # Query 1 emits yyyy-mm-dd; a raw datetime export still starts that way.
+            dt = str(r[cols['date']]).strip()[:10]
+            year, mon = int(dt[:4]), int(dt[5:7])
+            n = int(float(r[cols['count']] or 0))
+        except Exception:
+            bad += 1
+            continue
+        if li is None:
+            dropped[code] += n
+            continue
+        agg[(year, mon, li)] += n
+        if code in LOC_ALIASES:
+            ewrcon[(year, mon)] += n
+    if bad:
+        print(f'{bad:,} rows in {EXPORT.name} had an unreadable date or count and were skipped.')
+    return agg, ewrcon, dropped
+
+
+def fetch_worker():
+    """Closed R/As per (year, month, loc_idx) from the worker's cached TSD snapshot.
+
+    Returns (Counter, pushed_at); an empty Counter on any failure so a worker outage
+    never blocks a refresh (the ratio section just hides itself if nothing else is
+    available).
     """
     try:
         # The worker sits behind Cloudflare, which answers 403 to Python's default
@@ -90,8 +136,8 @@ def fetch_rentals():
         req = urllib.request.Request(RENTALS_URL, headers={'User-Agent': 'Mozilla/5.0 drivo-complaint-trends/refresh'})
         payload = json.loads(urllib.request.urlopen(req, timeout=30).read().decode('utf-8'))
     except Exception as e:
-        print(f'Closed-rental feed unavailable ({e}) — building without the ratio section.')
-        return [], None
+        print(f'Closed-rental worker unavailable ({e}).')
+        return Counter(), None
 
     agg = Counter()
     for row in payload.get('rows') or []:
@@ -103,7 +149,58 @@ def fetch_rentals():
         except Exception:
             continue
         agg[(year, mon, li)] += int(row.get('count') or 0)
-    return [[*k, v] for k, v in sorted(agg.items())], payload.get('pushedAt')
+    return agg, payload.get('pushedAt')
+
+
+def month_totals(agg):
+    out = Counter()
+    for (year, mon, _), n in agg.items():
+        out[(year, mon)] += n
+    return out
+
+
+def fetch_rentals():
+    """Closed R/As for the dashboard: the TSD export where it has data, the worker
+    snapshot for any other month.
+
+    Returns ([[year, month, loc_idx, count], ...], pushed_at, export_months, exported_at).
+    export_months lists the [year, month] pairs taken from the export so the page's
+    in-browser worker refresh leaves them alone.
+    """
+    exported = read_export()
+    worker, pushed_at = fetch_worker()
+    if exported is None:
+        print(f'No {EXPORT.name} next to the script — closed R/As come from the worker snapshot only, '
+              f'which has no EWRCON rows. Run closed_ras.sql in Azure Data Studio and save query 1 as '
+              f'{EXPORT.name} to fix that.')
+        return [[*k, v] for k, v in sorted(worker.items())], pushed_at, [], None
+
+    agg, ewrcon, dropped = exported
+    export_months = {k[:2] for k in agg}
+    merged = Counter(agg)
+    for k, v in worker.items():
+        if k[:2] not in export_months:
+            merged[k] += v
+
+    # Reconcile with the old snapshot month by month so the change is visible.
+    ex_tot, wk_tot = month_totals(agg), month_totals(worker)
+    print(f'Closed R/As from {EXPORT.name} ({sum(agg.values()):,} across {len(export_months)} months; '
+          f'EWRCON counted under EWR: {sum(ewrcon.values()):,}).')
+    if dropped:
+        print('  Ignored branch codes in the export: '
+              + ', '.join(f'{c or "(blank)"} {n:,}' for c, n in dropped.most_common()))
+    print(f'  {"month":8} {"export":>8} {"worker":>8} {"diff":>7} {"EWRCON":>7}')
+    for ym in sorted(export_months):
+        e, w = ex_tot[ym], wk_tot.get(ym)
+        w_s, diff = (f'{w:,}', f'{e - w:+,}') if w is not None else ('n/a', 'n/a')
+        print(f'  {ym[0]}-{ym[1]:02d}  {e:8,} {w_s:>8} {diff:>7} {ewrcon[ym]:7,}')
+    filler = sorted(set(wk_tot) - export_months)
+    if filler:
+        print('  Months filled from the worker snapshot (not in the export): '
+              + ', '.join(f'{y}-{m:02d}' for y, m in filler))
+    exported_at = datetime.fromtimestamp(EXPORT.stat().st_mtime).isoformat(timespec='minutes')
+    return ([[*k, v] for k, v in sorted(merged.items())], pushed_at,
+            sorted(list(ym) for ym in export_months), exported_at)
 
 
 def main():
@@ -156,7 +253,7 @@ def main():
             if r[col].strip():
                 agg[(year, mon, day, src, li, ti)] += 1
 
-    rentals, pushed_at = fetch_rentals()
+    rentals, pushed_at, export_months, exported_at = fetch_rentals()
     data = {
         'asOf': date.today().isoformat(),
         'types': [{'name': n, 'cat': c} for n, _, c in TYPES],
@@ -164,6 +261,8 @@ def main():
         'locs': LOCS,
         'rentals': rentals,
         'rentalsPushedAt': pushed_at,
+        'rentalsExportMonths': export_months,
+        'rentalsExportedAt': exported_at,
     }
     html = TEMPLATE.read_text()
     assert '__DATA__' in html, 'dashboard_template.html is missing the __DATA__ placeholder'
@@ -177,8 +276,10 @@ def main():
     if offloc:
         print(f'{offloc:,} rows excluded: Location not one of {LOCS} (or an alias: {LOC_ALIASES}).')
     if rentals:
-        print(f'Closed R/As: {sum(r[3] for r in rentals):,} across {len(LOCS)} locations '
-              f'(pushed {pushed_at}).')
+        print(f'Closed R/As on the dashboard: {sum(r[3] for r in rentals):,} across {len(LOCS)} locations'
+              + (f' (worker snapshot pushed {pushed_at}).' if pushed_at else '.'))
+    else:
+        print('No closed R/A data from either source — building without the ratio section.')
     open_browser()
 
 

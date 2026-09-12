@@ -24,10 +24,45 @@ Run **`refresh_dashboard.py`** (requires Python 3, no extra packages):
 ./refresh_dashboard.py
 ```
 
-It downloads the latest published sheet and the closed-R/A snapshot, rebuilds
-`index.html`, and opens it. Commit and push the updated `index.html` to share the
-refreshed numbers. If the closed-R/A feed is unreachable the refresh
-still succeeds — it just builds without the Closed R/As tile and says so.
+It downloads the latest published sheet, reads the closed-R/A export
+(`closed_ras.csv`, see below) with the worker snapshot as fallback, rebuilds
+`index.html`, and opens it. Commit and push the updated `index.html` (and
+`closed_ras.csv`) to share the refreshed numbers. If neither closed-R/A source is
+available the refresh still succeeds — it just builds without the Closed R/As
+tile and says so.
+
+### Refreshing the closed R/As from TSD
+
+The quick way, on a machine with TSD access set up:
+
+```
+~/.venvs/tsd/bin/python export_closed_ras.py
+./refresh_dashboard.py
+```
+
+`export_closed_ras.py` connects to TSD and writes `closed_ras.csv`. It needs the
+`pymssql` driver (`python3 -m venv ~/.venvs/tsd && ~/.venvs/tsd/bin/pip install
+pymssql`) and a credentials file at `~/.config/tsd/credentials` with
+`TSD_SERVER`, `TSD_PORT`, `TSD_DATABASE`, `TSD_USER`, `TSD_PASSWORD` lines. The
+database is the TSD customer database **42295** on the Azure SQL server;
+`DrivoDatabase` on the same server is empty. The file is outside the repo on
+purpose — never commit credentials.
+
+The manual way, from Azure Data Studio:
+
+1. Connect to the TSD server and pick database **42295** in the editor's
+   database dropdown, then open **`closed_ras.sql`** and run it. Query 1 is the
+   export; queries 2 and 3 are checks (all branch codes present, and Newark
+   month by month as EWR vs EWRCON).
+2. In the results grid of query 1, click **Save as CSV** and save the file as
+   **`closed_ras.csv`** in this folder, next to `refresh_dashboard.py`.
+3. Run `./refresh_dashboard.py`.
+
+Either way the refresh prints, for every month in the export, the export total
+next to the worker snapshot's total and how many EWRCON closed R/As were counted
+under EWR. Months before August 2026 match the worker exactly, which confirms the
+export uses the same definition as the push job; from late August 2026 on, the
+export is higher by exactly the EWRCON rentals the push job leaves out.
 
 ## What the dashboard shows
 
@@ -81,14 +116,21 @@ still succeeds — it just builds without the Closed R/As tile and says so.
   drew a complaint, and it could in principle exceed 100%.
 - Bars are ranked highest-rate-first, and each is labelled with its own
   complaints / closed R/As counts.
-- Closed R/As per month and location come from
+- Closed R/As per month and location come first from **`closed_ras.csv`**, an
+  export of TSD's rental-agreement table (`Cra001`) made with `closed_ras.sql`:
+  a closed R/A is a contract with `CLOSED_FLAG = 1` and `TYPE` C or H (void,
+  damage, non-revenue-transfer and wait-status contracts are excluded), counted
+  on its check-in date (`DATE_IN`) under its check-out branch (`LOC_OUT`).
+- Months the export does not cover are filled from
   `https://drivo-dashboard-api.mohamed-57f.workers.dev/api/closedrentals`. That
   worker serves a cached snapshot which a **separate** job pushes from TSD —
-  nothing in this repo talks to TSD directly.
-- Only the five locations the feed reports are shown, under the feed's own codes:
-  JFK, LGA, EWR, BRK, BRKJS. The code **EWRCON** is part of Newark: its closed
-  R/As (and any complaints tagged with it) are counted under EWR, in both the
-  refresh script and the in-browser live refresh.
+  nothing in this repo talks to TSD directly. That push job currently leaves
+  out the EWRCON branch, which is why the export is preferred: the in-browser
+  live refresh only updates months that are not in the export.
+- Only the five locations JFK, LGA, EWR, BRK, BRKJS are shown. The code
+  **EWRCON** is part of Newark: its closed R/As (and any complaints tagged with
+  it) are counted under EWR, in both the refresh script and the page. Any other
+  branch code in the export is ignored and listed by the refresh script.
 - The tile is a rental count, so the source filter does not apply to it. On the
   chart the filter narrows the **complaints only** — the denominator is always
   every closed R/A — so filtering to one source gives that channel's rate.
@@ -101,5 +143,8 @@ still succeeds — it just builds without the Closed R/As tile and says so.
 | File | Purpose |
 |---|---|
 | `index.html` | The dashboard — open it in a browser; also the filename GitHub Pages serves at the root URL |
-| `refresh_dashboard.py` | Rebuilds `index.html` from the live sheet |
+| `refresh_dashboard.py` | Rebuilds `index.html` from the live sheet and the closed-R/A sources |
+| `export_closed_ras.py` | Connects to TSD and writes `closed_ras.csv` (needs `pymssql` and `~/.config/tsd/credentials`) |
+| `closed_ras.sql` | The same query for Azure Data Studio, plus two checks; save query 1's result as `closed_ras.csv` |
+| `closed_ras.csv` | Closed R/As per day and branch exported from TSD — the preferred closed-R/A source; commit it with `index.html` |
 | `dashboard_template.html` | Page design without data; the script fills it in — edit this to change the dashboard, then rerun the script |

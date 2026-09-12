@@ -307,6 +307,12 @@ const DATA = __DATA__;
    still renders, and the live fetches below fill them in. */
 DATA.locs = DATA.locs || ['JFK', 'LGA', 'EWR', 'BRK', 'BRKJS'];
 DATA.rentals = DATA.rentals || [];
+/* Months whose closed R/As were embedded from the TSD export (closed_ras.csv) —
+   the worker's live refresh below must not replace them, because the worker's
+   push job drops EWRCON and would undercount Newark. */
+DATA.rentalsExportMonths = DATA.rentalsExportMonths || [];
+const exportMonthKeys = new Set(DATA.rentalsExportMonths.map(([y, m]) => y * 100 + m));
+const exportedRentals = DATA.rentals.filter(([y, m]) => exportMonthKeys.has(y * 100 + m));
 
 /* Codes that are the same branch under another name: EWRCON is part of Newark, so
    its closed R/As and complaints count under EWR. Mirrors refresh_dashboard.py. */
@@ -379,8 +385,10 @@ const srcName = () => ['Drivo Survey', 'Other sources', 'All sources'][state.src
 const scope = () => (state.loc === ALL_LOCS ? srcName() : `${srcName()} · ${DATA.locs[state.loc]}`);
 
 /* ---------- closed R/As (rentals) ----------
-   Read from a worker that caches whatever a separate job last pushed from TSD;
-   nothing here talks to TSD directly. Keyed by month and location. */
+   Embedded by refresh_dashboard.py from the TSD export (closed_ras.csv) where it
+   has data, and from a worker that caches whatever a separate job last pushed
+   from TSD for other months; nothing here talks to TSD directly. Keyed by month
+   and location. */
 const hasRentals = () => DATA.rentals.length > 0;
 
 function rentByLoc(year, month) {
@@ -488,14 +496,17 @@ function renderRate() {
     });
   }
 
-  const pushed = DATA.rentalsPushedAt
-    ? new Date(DATA.rentalsPushedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    : null;
+  const fmtWhen = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const parts = [];
   if (totR && !partial) parts.push(`Overall ${fmt(totC)} complaints ÷ ${fmt(totR)} closed R/As = <b>${fmtPct(rate(totC, totR))}</b>.`);
   parts.push('Counts type marks, the same basis as the cards above, so a complaint logged under several types is counted once per type.');
   if (src !== 2) parts.push(`The source filter narrows the complaints only — the denominator stays every closed R/A.`);
-  parts.push(pushed ? `Closed R/As pushed ${pushed}.` : 'Closed R/A push time unknown.');
+  if (exportMonthKeys.has(year * 100 + month)) {
+    parts.push('Closed R/As for this month come from the TSD export (EWRCON counted under EWR)'
+      + (DATA.rentalsExportedAt ? `, saved ${fmtWhen(DATA.rentalsExportedAt)}.` : '.'));
+  } else {
+    parts.push(DATA.rentalsPushedAt ? `Closed R/As pushed ${fmtWhen(DATA.rentalsPushedAt)}.` : 'Closed R/A push time unknown.');
+  }
   note.innerHTML = parts.join(' ');
 
   const trend = rentalMonths().map(([y, m]) => {
@@ -879,7 +890,9 @@ async function refreshLive() {
 /* ---------- live refresh of closed R/As ----------
    The worker serves whatever the TSD job last pushed, with CORS open. It is
    independent of the sheet fetch above: if it fails we keep the embedded
-   snapshot, and if there has never been one the ratio card stays hidden. */
+   snapshot, and if there has never been one the ratio card stays hidden.
+   Months embedded from the TSD export are kept as they are; the worker only
+   updates the months the export does not cover. */
 const RENTALS_URL = 'https://drivo-dashboard-api.mohamed-57f.workers.dev/api/closedrentals';
 
 async function refreshRentals() {
@@ -893,12 +906,12 @@ async function refreshRentals() {
       const li = locIndex(row.location);
       if (li < 0) continue;
       const [year, mon] = String(row.month || '').split('-').map(Number);
-      if (!year || !mon) continue;
+      if (!year || !mon || exportMonthKeys.has(year * 100 + mon)) continue;
       const k = `${year},${mon},${li}`;
       agg.set(k, (agg.get(k) || 0) + (Number(row.count) || 0));
     }
-    if (!agg.size) throw new Error('no closed R/A rows');
-    DATA.rentals = [...agg].map(([k, v]) => [...k.split(',').map(Number), v]);
+    if (!agg.size && !exportedRentals.length) throw new Error('no closed R/A rows');
+    DATA.rentals = [...exportedRentals, ...[...agg].map(([k, v]) => [...k.split(',').map(Number), v])];
     DATA.rentalsPushedAt = payload.pushedAt || null;
     render();
   } catch (e) {
