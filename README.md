@@ -5,7 +5,22 @@ broken down weekly and monthly by complaint type.
 
 ## Viewing the dashboard
 
-The live way, with closed R/As read from TSD on every page load:
+**For everyone else: open the published page** at
+<https://amir-kuldashev.github.io/drivo-complaint-trends/>. Nothing to install
+or run. GitHub rebuilds it every hour (and after every push to `main`) through
+the `Publish dashboard` workflow in `.github/workflows/pages.yml`: the workflow
+exports the closed R/As from TSD, rebuilds the page, and publishes it. On top
+of that, the page fetches the latest sheet in the browser on every load. The
+rate note under the chart shows when the closed R/As were exported. If the TSD
+export fails, that run fails and the previous page stays up — check the Actions
+tab.
+
+The workflow reads the TSD login from repository secrets `TSD_SERVER`,
+`TSD_DATABASE`, `TSD_USER`, `TSD_PASSWORD` (Settings → Secrets and variables →
+Actions). Set those once; they are never committed or published.
+
+The live way on your own machine, with closed R/As read from TSD on every page
+load:
 
 ```
 ~/.venvs/tsd/bin/python serve_dashboard.py
@@ -161,7 +176,8 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
 
 | File | Purpose |
 |---|---|
-| `index.html` | The dashboard — open it in a browser; also the filename GitHub Pages serves at the root URL |
+| `index.html` | The dashboard — open it in a browser; the hourly workflow builds and publishes its own copy of this file |
+| `.github/workflows/pages.yml` | Hourly GitHub Actions job: export from TSD, rebuild, publish to GitHub Pages |
 | `refresh_dashboard.py` | Rebuilds `index.html` from the live sheet and the closed-R/A sources |
 | `serve_dashboard.py` | Serves the dashboard locally with closed R/As read live from TSD on every page load |
 | `tsd_closed_ras.py` | Shared TSD connection and closed-R/A query used by the server and the export script |

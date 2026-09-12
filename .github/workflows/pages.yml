@@ -1,0 +1,74 @@
+# Rebuilds the dashboard with closed R/As exported from TSD and publishes it to
+# GitHub Pages — every hour, on every push to main, and on demand from the
+# Actions tab. Viewers only open the Pages link; nothing runs on their machine.
+#
+# The TSD login comes from repository secrets (Settings → Secrets and variables
+# → Actions): TSD_SERVER, TSD_DATABASE, TSD_USER, TSD_PASSWORD. It is written to
+# a file on the runner for the scripts and is never committed or published.
+# Only index.html is published; if the TSD export fails the job fails and the
+# previous page stays up.
+name: Publish dashboard
+
+on:
+  schedule:
+    - cron: '17 * * * *'          # hourly, at :17 past
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pymssql
+
+      - name: Write TSD credentials for the scripts
+        env:
+          TSD_SERVER: ${{ secrets.TSD_SERVER }}
+          TSD_DATABASE: ${{ secrets.TSD_DATABASE }}
+          TSD_USER: ${{ secrets.TSD_USER }}
+          TSD_PASSWORD: ${{ secrets.TSD_PASSWORD }}
+        run: |
+          test -n "$TSD_PASSWORD" || { echo "TSD_* secrets are not set on this repository"; exit 1; }
+          mkdir -p ~/.config/tsd
+          printf 'TSD_SERVER=%s\nTSD_PORT=1433\nTSD_DATABASE=%s\nTSD_USER=%s\nTSD_PASSWORD=%s\n' \
+            "$TSD_SERVER" "$TSD_DATABASE" "$TSD_USER" "$TSD_PASSWORD" > ~/.config/tsd/credentials
+          chmod 600 ~/.config/tsd/credentials
+
+      - name: Export closed R/As from TSD
+        run: python export_closed_ras.py
+
+      - name: Rebuild index.html from the sheet and the export
+        env:
+          BROWSER: 'true'         # the script tries to open a browser; make that a no-op
+        run: python refresh_dashboard.py
+
+      - name: Stage only the page for publishing
+        run: mkdir -p site && cp index.html site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

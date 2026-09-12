@@ -16,7 +16,7 @@ import sys
 import urllib.request
 import webbrowser
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 CSV_URL = ('https://docs.google.com/spreadsheets/d/e/'
@@ -198,7 +198,9 @@ def fetch_rentals():
     if filler:
         print('  Months filled from the worker snapshot (not in the export): '
               + ', '.join(f'{y}-{m:02d}' for y, m in filler))
-    exported_at = datetime.fromtimestamp(EXPORT.stat().st_mtime).isoformat(timespec='minutes')
+    # Timezone-aware so a browser anywhere shows the save time in its own zone
+    # (the GitHub Actions build runs in UTC).
+    exported_at = datetime.fromtimestamp(EXPORT.stat().st_mtime, tz=timezone.utc).isoformat(timespec='minutes')
     return ([[*k, v] for k, v in sorted(merged.items())], pushed_at,
             sorted(list(ym) for ym in export_months), exported_at)
 
