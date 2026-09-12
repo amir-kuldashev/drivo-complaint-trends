@@ -501,7 +501,9 @@ function renderRate() {
   if (totR && !partial) parts.push(`Overall ${fmt(totC)} complaints ÷ ${fmt(totR)} closed R/As = <b>${fmtPct(rate(totC, totR))}</b>.`);
   parts.push('Counts type marks, the same basis as the cards above, so a complaint logged under several types is counted once per type.');
   if (src !== 2) parts.push(`The source filter narrows the complaints only — the denominator stays every closed R/A.`);
-  if (exportMonthKeys.has(year * 100 + month)) {
+  if (DATA.rentalsSource === 'tsd') {
+    parts.push(`Closed R/As live from TSD (EWRCON counted under EWR), loaded ${fmtWhen(DATA.rentalsPushedAt)}.`);
+  } else if (exportMonthKeys.has(year * 100 + month)) {
     parts.push('Closed R/As for this month come from the TSD export (EWRCON counted under EWR)'
       + (DATA.rentalsExportedAt ? `, saved ${fmtWhen(DATA.rentalsExportedAt)}.` : '.'));
   } else {
@@ -892,27 +894,52 @@ async function refreshLive() {
    independent of the sheet fetch above: if it fails we keep the embedded
    snapshot, and if there has never been one the ratio card stays hidden.
    Months embedded from the TSD export are kept as they are; the worker only
-   updates the months the export does not cover. */
-const RENTALS_URL = 'https://drivo-dashboard-api.mohamed-57f.workers.dev/api/closedrentals';
+   updates the months the export does not cover.
+
+   Preferred source: api/closedrentals on the page's own origin, which
+   serve_dashboard.py answers straight from TSD on every load (payload.source
+   is "tsd"). That data already includes EWRCON, so it replaces every month,
+   exported ones included. The worker is only the fallback. */
+const WORKER_URL = 'https://drivo-dashboard-api.mohamed-57f.workers.dev/api/closedrentals';
+const RENTAL_SOURCES = [new URL('api/closedrentals', location.href).href, WORKER_URL];
+
+async function fetchRentals() {
+  let lastErr = null;
+  for (const url of RENTAL_SOURCES) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const payload = await res.json();
+      if (!Array.isArray(payload.rows)) throw new Error('not a closed R/A feed');
+      return payload;
+    } catch (e) {
+      lastErr = e;
+      console.warn('closed R/A source failed:', url, e.message);
+    }
+  }
+  throw lastErr || new Error('no closed R/A source');
+}
 
 async function refreshRentals() {
   if (location.protocol === 'file:') return;
   try {
-    const res = await fetch(RENTALS_URL, { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const payload = await res.json();
+    const payload = await fetchRentals();
+    const liveTsd = payload.source === 'tsd';
+    const keep = liveTsd ? [] : exportedRentals;
+    const skip = liveTsd ? new Set() : exportMonthKeys;
     const agg = new Map();
-    for (const row of payload.rows || []) {
+    for (const row of payload.rows) {
       const li = locIndex(row.location);
       if (li < 0) continue;
       const [year, mon] = String(row.month || '').split('-').map(Number);
-      if (!year || !mon || exportMonthKeys.has(year * 100 + mon)) continue;
+      if (!year || !mon || skip.has(year * 100 + mon)) continue;
       const k = `${year},${mon},${li}`;
       agg.set(k, (agg.get(k) || 0) + (Number(row.count) || 0));
     }
-    if (!agg.size && !exportedRentals.length) throw new Error('no closed R/A rows');
-    DATA.rentals = [...exportedRentals, ...[...agg].map(([k, v]) => [...k.split(',').map(Number), v])];
+    if (!agg.size && !keep.length) throw new Error('no closed R/A rows');
+    DATA.rentals = [...keep, ...[...agg].map(([k, v]) => [...k.split(',').map(Number), v])];
     DATA.rentalsPushedAt = payload.pushedAt || null;
+    DATA.rentalsSource = liveTsd ? 'tsd' : 'worker';
     render();
   } catch (e) {
     console.warn('closed R/A feed unavailable:', e.message);

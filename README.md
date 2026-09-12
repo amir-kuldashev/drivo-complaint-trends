@@ -5,8 +5,25 @@ broken down weekly and monthly by complaint type.
 
 ## Viewing the dashboard
 
-Open **`index.html`** in any browser — no server or internet connection needed.
-It shows the data as of the date in the header ("Data through …").
+The live way, with closed R/As read from TSD on every page load:
+
+```
+~/.venvs/tsd/bin/python serve_dashboard.py
+```
+
+This opens `http://127.0.0.1:8765/`. Every reload fetches the latest sheet and
+asks TSD for the closed R/As directly, so EWRCON is always in the EWR numbers and
+nothing depends on the worker or the job that pushes to it. The header says
+"live from the sheet" and the rate note says "live from TSD". The server needs
+the same `pymssql` driver and `~/.config/tsd/credentials` file as the export
+script (see below); it serves only `index.html` and the closed-R/A feed, never
+the scripts, the CSV or credentials. Results from TSD are reused for 60 seconds
+(`--cache-seconds`), so a burst of reloads is one query. Use `--host 0.0.0.0` to
+let other machines on your network open it.
+
+The offline way: open **`index.html`** in any browser — no server or internet
+connection needed. It shows the data as of the date in the header
+("Data through …").
 
 When the page is served from a web address (e.g. GitHub Pages), it goes further:
 on every load it fetches the latest published sheet directly and recomputes all
@@ -116,7 +133,9 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
   drew a complaint, and it could in principle exceed 100%.
 - Bars are ranked highest-rate-first, and each is labelled with its own
   complaints / closed R/As counts.
-- Closed R/As per month and location come first from **`closed_ras.csv`**, an
+- When the page is served by `serve_dashboard.py`, closed R/As per month and
+  location come live from TSD on every load through `api/closedrentals` on the
+  page's own origin. Otherwise they come first from **`closed_ras.csv`**, an
   export of TSD's rental-agreement table (`Cra001`) made with `closed_ras.sql`:
   a closed R/A is a contract with `CLOSED_FLAG = 1` and `TYPE` C or H (void,
   damage, non-revenue-transfer and wait-status contracts are excluded), counted
@@ -144,6 +163,8 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
 |---|---|
 | `index.html` | The dashboard — open it in a browser; also the filename GitHub Pages serves at the root URL |
 | `refresh_dashboard.py` | Rebuilds `index.html` from the live sheet and the closed-R/A sources |
+| `serve_dashboard.py` | Serves the dashboard locally with closed R/As read live from TSD on every page load |
+| `tsd_closed_ras.py` | Shared TSD connection and closed-R/A query used by the server and the export script |
 | `export_closed_ras.py` | Connects to TSD and writes `closed_ras.csv` (needs `pymssql` and `~/.config/tsd/credentials`) |
 | `closed_ras.sql` | The same query for Azure Data Studio, plus two checks; save query 1's result as `closed_ras.csv` |
 | `closed_ras.csv` | Closed R/As per day and branch exported from TSD — the preferred closed-R/A source; commit it with `index.html` |

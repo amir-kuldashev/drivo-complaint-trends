@@ -1,0 +1,3 @@
+__pycache__/
+# The TSD manual is confidential to TSD customers; keep it out of the repo.
+*.pdf
