@@ -59,10 +59,21 @@
     color: var(--ink);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     margin: 0;
-    padding: 28px 20px 56px;
+    padding: 28px 24px 56px;
     line-height: 1.45;
+    min-width: 0;
+    overflow-x: hidden;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  /* Full width of whatever screen is showing the page; the card grid below
+     decides how the space is used. */
+  .wrap { width: 100%; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  /* One column on a phone or laptop, two columns side by side once the
+     viewport is wide enough that a single full-width chart would look empty. */
+  .cards { display: grid; grid-template-columns: 1fr; gap: 20px; min-width: 0; }
+  @media (min-width: 1280px) {
+    .cards { grid-template-columns: 1fr 1fr; }
+    .cards > .wide { grid-column: 1 / -1; }
+  }
 
   header .eyebrow {
     font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
@@ -91,9 +102,27 @@
   .seg button + button { border-left: 1px solid var(--border); }
   .seg button:hover { background: var(--wash); }
   .seg button[aria-pressed="true"] { background: var(--wash); color: var(--seg-active-ink); font-weight: 650; }
-  .seg button:focus-visible, .filters select:focus-visible, .col:focus-visible {
+  .seg button:focus-visible, .filters select:focus-visible, .col:focus-visible, .switch:focus-visible {
     outline: 2px solid var(--ctrl); outline-offset: 1px;
   }
+  /* duplicates switch */
+  .switch {
+    font: inherit; font-size: 12px; font-weight: 500; color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: transparent; border: none; padding: 4px 2px; border-radius: 8px;
+  }
+  .switch .knob {
+    position: relative; width: 34px; height: 20px; border-radius: 10px; flex: none;
+    background: var(--axis); transition: background .15s;
+  }
+  .switch .knob::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    transition: transform .15s;
+  }
+  .switch[aria-checked="true"] .knob { background: var(--ctrl); }
+  .switch[aria-checked="true"] .knob::after { transform: translateX(14px); }
+  .switch[aria-checked="true"] .switch-lab { color: var(--ink); font-weight: 650; }
 
   /* ---------- stat tiles ---------- */
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
@@ -109,7 +138,7 @@
   /* ---------- chart cards ---------- */
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px 18px 14px;
+    padding: 16px 18px 14px; min-width: 0;
   }
   .card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 4px; }
   .card-head h2 { font-size: 15px; font-weight: 650; margin: 0; }
@@ -134,7 +163,8 @@
     align-items: center; cursor: default; border-radius: 6px 6px 0 0;
   }
   .col:hover { background: var(--wash); }
-  .stack { width: 100%; max-width: 24px; display: flex; flex-direction: column-reverse; }
+  /* Never wider than 62% of the column, so bars keep a gap at any screen width. */
+  .stack { width: 62%; max-width: 32px; display: flex; flex-direction: column-reverse; }
   .seg-c, .seg-n { width: 100%; }
   .seg-c { background: var(--ctrl); }
   .seg-n { background: var(--nonctrl); margin-bottom: 2px; }  /* 2px surface gap between stack fills */
@@ -209,7 +239,25 @@
   tr.subtotal td { font-weight: 650; border-bottom: 1px solid var(--axis); }
   tr.grand td { font-weight: 700; border-bottom: none; border-top: 2px solid var(--axis); }
   th.div, td.div { border-left: 1px solid var(--grid); }
-  @media (max-width: 640px) { .tile .value { font-size: 28px; } }
+  @media (max-width: 640px) {
+    body { padding: 18px 16px 40px; }
+    header h1 { font-size: 22px; }
+    .tile .value { font-size: 28px; }
+    .tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .filters { padding: 10px 12px; gap: 8px 12px; }
+    .seg { margin-left: 0; }
+    .seg button { padding: 6px 10px; font-size: 12px; }
+    .card { padding: 14px 12px 12px; }
+    .legend { margin-left: 0; }
+    /* Narrower fixed columns so the bar rows fit a phone without clipping. */
+    .tb-row { grid-template-columns: minmax(0, 118px) 1fr 40px; gap: 8px; }
+    .tb-row.tt { grid-template-columns: minmax(0, 118px) 1fr 40px 48px; }
+    .tb-row.cr { grid-template-columns: 62px 1fr 56px 88px; }
+    .tb-name { font-size: 12px; }
+    .plot { margin-left: 38px; height: 200px; }
+    .gridline .tick { left: -38px; width: 34px; }
+    .xband { margin-left: 38px; }
+  }
 </style>
 
 <div class="wrap">
@@ -223,6 +271,9 @@
     <label>Year <select id="selYear"></select></label>
     <label>Month <select id="selMonth"></select></label>
     <label>Location <select id="selLoc"></select></label>
+    <button class="switch" id="dupSwitch" role="switch" aria-checked="false" title="Show the numbers with the duplicate-flagged records counted in">
+      <span class="knob" aria-hidden="true"></span><span class="switch-lab">Include duplicates</span>
+    </button>
     <div class="seg" role="group" aria-label="Source" id="segSrc">
       <button data-src="2" aria-pressed="true">Overall</button>
       <button data-src="0" aria-pressed="false">Drivo Survey</button>
@@ -232,6 +283,7 @@
 
   <div class="tiles" id="tiles"></div>
 
+  <div class="cards">
   <div class="card" id="crCard" hidden>
     <div class="card-head">
       <h2 id="crTitle">Complaint rate by location</h2>
@@ -244,7 +296,7 @@
     </details>
   </div>
 
-  <div class="card">
+  <div class="card" id="wkCard">
     <div class="card-head">
       <h2 id="wkTitle">Weekly breakdown</h2>
       <span class="sub" id="wkSub"></span>
@@ -287,6 +339,7 @@
       <div class="tscroll" id="moTable"></div>
     </details>
   </div>
+  </div>
 
   <div class="card">
     <div class="card-head">
@@ -294,7 +347,7 @@
       <span class="sub" id="tbSub"></span>
     </div>
     <div class="tscroll" id="tbWrap"></div>
-    <div class="footnote">Week columns and the Total column follow the source filter above. The Drivo / Other / Overall columns always show the full month split by source. Duplicate-flagged records are excluded everywhere.</div>
+    <div class="footnote">Week columns and the Total column follow the source filter above. The Drivo / Other / Overall columns always show the full month split by source. <span id="tbDupNote">Duplicate-flagged records are excluded everywhere.</span></div>
   </div>
 </div>
 
@@ -302,6 +355,15 @@
 
 <script>
 const DATA = __DATA__;
+
+/* Records come in two sets with the same layout: `records` holds every row the
+   sheet does not flag as a duplicate, `dupRecords` only the rows flagged
+   `Duplicate? = Yes`. The switch in the filter row decides whether the second
+   set is counted; everything on the page reads DATA.records, which is swapped
+   between the two views by applyDupView(). An index.html built before the
+   switch existed has no dupRecords and simply has nothing to add. */
+DATA.baseRecords = DATA.records || [];
+DATA.dupRecords = DATA.dupRecords || [];
 
 /* Closed-rental fields are optional: an index.html built before they existed
    still renders, and the live fetches below fill them in. */
@@ -339,7 +401,7 @@ const fmt = n => n.toLocaleString('en-US');
 let curY, curM, curD;
 function computeLatest() {
   let latest = [0, 0, 0];
-  for (const [y, m, d] of DATA.records) {
+  for (const [y, m, d] of DATA.baseRecords.concat(DATA.dupRecords)) {
     if (y > latest[0] || (y === latest[0] && (m > latest[1] || (m === latest[1] && d > latest[2])))) latest = [y, m, d];
   }
   [curY, curM, curD] = latest;
@@ -347,7 +409,16 @@ function computeLatest() {
 computeLatest();
 
 /* state */
-const state = { year: curY, month: curM, src: 2, loc: ALL_LOCS };  /* src: 0 Drivo, 1 other, 2 overall */
+const state = { year: curY, month: curM, src: 2, loc: ALL_LOCS, dups: false };  /* src: 0 Drivo, 1 other, 2 overall */
+
+/* Point DATA.records at the set the switch asks for. Keys can repeat across the
+   two sets (same day, source, location and type); every reader sums, so that
+   is harmless. */
+function applyDupView() {
+  DATA.records = state.dups ? DATA.baseRecords.concat(DATA.dupRecords) : DATA.baseRecords;
+}
+applyDupView();
+const dupLabel = () => (state.dups ? 'duplicates included' : 'duplicates excluded');
 
 /* The location filter is global: every count on the page passes through this. */
 const locOK = r => state.loc === ALL_LOCS || r[4] === state.loc;
@@ -379,6 +450,18 @@ function slice(year, month, src) {
   return { byTypeWeek, catWeek };
 }
 const monthTotal = (y, m, src) => sum(r => r[0] === y && r[1] === m, src);
+/* Duplicate-flagged marks for a month, whichever view is on — shown on the
+   total tile so the effect of the switch is visible either way. */
+function dupMonthTotal(y, m, src) {
+  let t = 0;
+  for (const r of DATA.dupRecords) {
+    if (r[0] !== y || r[1] !== m) continue;
+    if (src !== 2 && r[3] !== src) continue;
+    if (!locOK(r)) continue;
+    t += r[6];
+  }
+  return t;
+}
 
 const srcName = () => ['Drivo Survey', 'Other sources', 'All sources'][state.src];
 /* Caption for every card: source, plus the location when one is selected. */
@@ -511,11 +594,13 @@ function renderRate() {
 }
 
 /* ---------- header ---------- */
+let asOfStatus = `saved snapshot from ${DATA.asOf}`;
 function setAsOf(status) {
+  if (status !== undefined) asOfStatus = status;
   document.getElementById('asof').textContent =
-    `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · duplicates excluded · ${status}`;
+    `Data through ${MONTH_ABBR[curM - 1]} ${curD}, ${curY} · ${dupLabel()} · ${asOfStatus}`;
 }
-setAsOf(`saved snapshot from ${DATA.asOf}`);
+setAsOf();
 
 /* ---------- filters ---------- */
 const selYear = document.getElementById('selYear');
@@ -547,6 +632,18 @@ function fillLocs() {
 selYear.onchange = () => { userTouched = true; state.year = +selYear.value; fillMonths(); render(); };
 selMonth.onchange = () => { userTouched = true; state.month = +selMonth.value; render(); };
 selLoc.onchange = () => { state.loc = +selLoc.value; render(); };
+const dupSwitch = document.getElementById('dupSwitch');
+dupSwitch.onclick = () => {
+  state.dups = !state.dups;
+  dupSwitch.setAttribute('aria-checked', String(state.dups));
+  applyDupView();
+  /* The year and month lists come from the records, so refill them: a month that
+     only has duplicate-flagged rows appears or disappears with the switch. */
+  fillYears();
+  fillMonths();
+  setAsOf();
+  render();
+};
 document.querySelectorAll('#segSrc button').forEach(b => {
   b.onclick = () => {
     document.querySelectorAll('#segSrc button').forEach(x => x.setAttribute('aria-pressed', x === b));
@@ -658,7 +755,7 @@ function render() {
     <div class="tile">
       <div class="label">${mName} ${year} total</div>
       <div class="value">${fmt(mTot)}</div>
-      <div class="sub">Drivo Survey ${fmt(drv)} · Other ${fmt(oth)}</div>
+      <div class="sub">Drivo Survey ${fmt(drv)} · Other ${fmt(oth)} · ${fmt(dupMonthTotal(year, month, src))} duplicates ${state.dups ? 'included' : 'excluded'}</div>
     </div>
     <div class="tile">
       <div class="label"><span class="keydot" style="background:var(--ctrl)"></span>Controllable</div>
@@ -779,7 +876,14 @@ function render() {
     <tr class="grand"><td>All complaints</td>${wAll.map(v => td(v)).join('')}${td(mTot)}${td(drv, 'div')}${td(oth)}${td(drv + oth)}</tr>
   </table>`;
 
+  document.getElementById('tbDupNote').textContent = state.dups
+    ? 'Duplicate-flagged records are counted in everywhere (switch in the filter row).'
+    : 'Duplicate-flagged records are excluded everywhere (switch in the filter row to count them).';
+
   renderRate();
+  /* With the rate card hidden the three remaining cards would leave a gap in the
+     two-column layout, so the weekly card takes the full row instead. */
+  document.getElementById('wkCard').classList.toggle('wide', !hasRate());
 }
 
 fillYears();
@@ -836,9 +940,10 @@ async function refreshLive() {
       .filter(c => !(c in col));
     if (missing.length) throw new Error('sheet layout changed — missing columns: ' + missing.join(', '));
 
-    const agg = new Map();
+    const agg = new Map(), dagg = new Map();
     for (const r of rows) {
-      if ((r[col['Duplicate?']] || '').trim().toLowerCase() === 'yes') continue;
+      const isDup = (r[col['Duplicate?']] || '').trim().toLowerCase() === 'yes';
+      const into = isDup ? dagg : agg;
       /* Every logged complaint counts regardless of the Confirmed column (mirrors refresh_dashboard.py). */
       const dt = (r[col['Date of Complaint']] || '').trim();
       if (!dt) continue;  /* empty filler rows */
@@ -853,13 +958,16 @@ async function refreshLive() {
       SHEET_COLS.forEach((c, ti) => {
         if ((r[col[c]] || '').trim()) {
           const k = `${year},${mon},${day},${src},${li},${ti}`;
-          agg.set(k, (agg.get(k) || 0) + 1);
+          into.set(k, (into.get(k) || 0) + 1);
         }
       });
     }
     if (!agg.size) throw new Error('no complaint records found in the sheet');
 
-    DATA.records = [...agg].map(([k, v]) => [...k.split(',').map(Number), v]);
+    const unpack = m => [...m].map(([k, v]) => [...k.split(',').map(Number), v]);
+    DATA.baseRecords = unpack(agg);
+    DATA.dupRecords = unpack(dagg);
+    applyDupView();
     computeLatest();
     if (!userTouched) { state.year = curY; state.month = curM; }
     fillYears();

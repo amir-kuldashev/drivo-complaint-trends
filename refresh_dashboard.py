@@ -223,12 +223,15 @@ def main():
         open_browser()
         sys.exit(1)
 
-    agg = Counter()
+    # Two record sets with the same layout: `agg` for rows not flagged as
+    # duplicates, `dagg` for rows flagged Duplicate? = Yes. The page shows the
+    # first by default and adds the second when the "Include duplicates" switch
+    # is on, so both are embedded.
+    agg, dagg = Counter(), Counter()
     skipped = 0
     offloc = 0
     for r in rows:
-        if r['Duplicate?'].strip().lower() == 'yes':
-            continue
+        into = dagg if r['Duplicate?'].strip().lower() == 'yes' else agg
         # Every logged complaint counts, whatever the Confirmed column says (rule
         # dropped 2026-09-13: an investigation outcome does not remove the complaint).
         dt = r['Date of Complaint'].strip()
@@ -249,13 +252,14 @@ def main():
             continue
         for ti, (_, col, _) in enumerate(TYPES):
             if r[col].strip():
-                agg[(year, mon, day, src, li, ti)] += 1
+                into[(year, mon, day, src, li, ti)] += 1
 
     rentals, pushed_at, export_months, exported_at = fetch_rentals()
     data = {
         'asOf': date.today().isoformat(),
         'types': [{'name': n, 'cat': c} for n, _, c in TYPES],
         'records': [[*k, v] for k, v in sorted(agg.items())],
+        'dupRecords': [[*k, v] for k, v in sorted(dagg.items())],
         'locs': LOCS,
         'rentals': rentals,
         'rentalsPushedAt': pushed_at,
@@ -269,7 +273,8 @@ def main():
 
     note = f', {skipped} dated rows unparseable and skipped' if skipped else ''
     print(f'Dashboard refreshed: {len(rows):,} sheet rows, '
-          f'{sum(agg.values()):,} complaint marks after excluding duplicates{note}.')
+          f'{sum(agg.values()):,} complaint marks after excluding duplicates '
+          f'({sum(dagg.values()):,} duplicate-flagged marks embedded for the switch){note}.')
     if offloc:
         print(f'{offloc:,} rows excluded: Location not one of {LOCS} (or an alias: {LOC_ALIASES}).')
     if rentals:

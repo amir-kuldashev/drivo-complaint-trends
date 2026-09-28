@@ -100,7 +100,12 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
 
 - **Filters** — year, month, location, and source (Overall / Drivo Survey / Other
   sources); every tile, chart, and table follows all four.
-- **Month total tile** — complaints for the selected month, split by source.
+- **Include duplicates switch** — off by default, so rows flagged
+  `Duplicate? = Yes` are left out. Switch it on to see every logged row counted,
+  duplicates included; the header, the month total tile, and the table footnote
+  say which view is showing. The closed-R/A figures are unaffected.
+- **Month total tile** — complaints for the selected month, split by source,
+  with the number of duplicate-flagged marks that were included or excluded.
 - **Weekly breakdown** — complaints in the day buckets 1–7, 8–14, 15–21, 22–31 of
   the selected month.
 - **Top complaint types** — the 8 highest-count types for the selected month, each
@@ -117,8 +122,10 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
 
 ## Counting rules
 
-- Rows flagged `Duplicate? = Yes` in the sheet are excluded everywhere; a blank
-  flag counts as not-a-duplicate.
+- Rows flagged `Duplicate? = Yes` in the sheet are excluded everywhere by
+  default; a blank flag counts as not-a-duplicate. The **Include duplicates**
+  switch in the filter row adds them back to every count on the page, so the
+  page embeds both sets of records (`records` and `dupRecords`).
 - The `Confirmed` column (investigation outcome) does **not** affect the count:
   a complaint that was investigated and not confirmed is still a logged complaint.
   (An exclusion rule for `Confirmed = N` existed from 11 to 13 September 2026 and
@@ -174,6 +181,15 @@ export is higher by exactly the EWRCON rentals the push job leaves out.
   in the rate note and in the trend table. Nothing is withheld: closed R/As come
   straight from TSD, so a low total for the latest month just means the month
   is not over yet.
+
+## Layout
+
+The page uses the full width of the screen at any size. On phones the filter
+row wraps, the bar rows use narrower fixed columns, and the tables scroll
+sideways inside their card. From about 1280px wide the four chart cards sit in
+two columns (rate and weekly, top types and monthly), with the complaint-types
+table full width underneath; when there is no closed-R/A data the weekly card
+takes a full row so no gap is left.
 
 ## Files
 
